@@ -100,7 +100,7 @@
 #define PT_PRIO_MIN DEFAULT_PRIO
 #define PT_PRIO_MAX DEFAULT_PRIO
 #elif defined(LINUX) || defined(__GNU__) || defined(__GLIBC__) || \
-    defined(FREEBSD)
+    defined(FREEBSD) || defined(SOLARIS)
 #define PT_PRIO_MIN sched_get_priority_min(SCHED_OTHER)
 #define PT_PRIO_MAX sched_get_priority_max(SCHED_OTHER)
 #elif defined(NTO)
@@ -111,15 +111,6 @@
  */
 #define PT_PRIO_MIN 0
 #define PT_PRIO_MAX 30
-#elif defined(SOLARIS)
-/*
- * Solaris doesn't seem to have macros for the min/max priorities.
- * The range of 0-127 is mentioned in the pthread_setschedparam(3T)
- * man pages, and pthread_setschedparam indeed allows 0-127.  However,
- * pthread_attr_setschedparam does not allow 0; it allows 1-127.
- */
-#define PT_PRIO_MIN 1
-#define PT_PRIO_MAX 127
 #elif defined(OPENBSD)
 #define PT_PRIO_MIN 0
 #define PT_PRIO_MAX 31
