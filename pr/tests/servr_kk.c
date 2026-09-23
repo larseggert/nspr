@@ -323,6 +323,8 @@ ServerThreadFunc(void* unused)
     if (!listenSocket) {
         SetServerState(SERVER, SERVER_STATE_DEAD);
     } else {
+        PRInt32 i;
+
         if (debug_mode) {
             DPRINTF("\tServer up\n");
         }
@@ -334,7 +336,7 @@ ServerThreadFunc(void* unused)
         WaitServerState(SERVER, SERVER_STATE_DYING);
 
         /* Cleanup */
-        for (PRInt32 i = 0; i < workerThreads; i++) {
+        for (i = 0; i < workerThreads; i++) {
             PR_Interrupt(workerThreadArray[i]); /* PR_Cleanup() then waits. */
         }
         SetServerState(SERVER, SERVER_STATE_DEAD);
