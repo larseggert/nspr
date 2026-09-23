@@ -177,7 +177,7 @@ WorkerThreadFunc(void* _listenSock)
 
                 WorkerThread = PR_CreateThread(
                     PR_USER_THREAD, WorkerThreadFunc, listenSock, PR_PRIORITY_NORMAL,
-                    ServerScope, PR_UNJOINABLE_THREAD, THREAD_STACKSIZE);
+                    ServerScope, PR_JOINABLE_THREAD, THREAD_STACKSIZE);
 
                 if (!WorkerThread) {
                     if (debug_mode) {
@@ -293,7 +293,7 @@ ServerSetup(void)
 
     WorkerThread = PR_CreateThread(PR_USER_THREAD, WorkerThreadFunc,
                                    listenSocket, PR_PRIORITY_NORMAL, ServerScope,
-                                   PR_UNJOINABLE_THREAD, THREAD_STACKSIZE);
+                                   PR_JOINABLE_THREAD, THREAD_STACKSIZE);
 
     if (!WorkerThread) {
         if (debug_mode) {
@@ -337,7 +337,10 @@ ServerThreadFunc(void* unused)
 
         /* Cleanup */
         for (i = 0; i < workerThreads; i++) {
-            PR_Interrupt(workerThreadArray[i]); /* PR_Cleanup() then waits. */
+            PR_Interrupt(workerThreadArray[i]);
+        }
+        for (i = 0; i < workerThreads; i++) {
+            PR_JoinThread(workerThreadArray[i]);
         }
         SetServerState(SERVER, SERVER_STATE_DEAD);
     }
