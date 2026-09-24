@@ -66,16 +66,17 @@ KnownAnswerTest(void)
         { "15 Oct 07 19:45 GMT", PR_FALSE, PR_INT64(1192477500000000) },
         { "Mon Oct 15 12:45 PDT 2007", PR_FALSE, PR_INT64(1192477500000000) },
         { "16 Oct 2007 4:45-JST (Tuesday)", PR_FALSE, PR_INT64(1192477500000000) },
-        // Not normalized.
+        /* Not normalized. */
         { "Mon Oct 15 12:44:60 PDT 2007", PR_FALSE, PR_INT64(1192477500000000) },
-        // Not normalized.
+        /* Not normalized. */
         { "Sun Oct 14 36:45 PDT 2007", PR_FALSE, PR_INT64(1192477500000000) },
         { "Mon, 15 Oct 2007 19:45:23 GMT", PR_FALSE, PR_INT64(1192477523000000) },
     };
 
     PRBool failed = PR_FALSE;
+    int i;
 
-    for (int i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+    for (i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
         PRTime result = 0;
         if (PR_ParseTimeString(tests[i].string, tests[i].default_to_gmt, &result) !=
             PR_SUCCESS) {
