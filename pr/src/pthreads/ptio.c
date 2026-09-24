@@ -68,10 +68,8 @@ typedef struct sendfilevec {
 
 #define SFV_FD_SELF (-2)
 
-/*
- * extern ssize_t sendfilev(int, const struct sendfilevec *, int, size_t *);
- */
-static ssize_t (*pt_solaris_sendfilev_fptr)() = NULL;
+static ssize_t (*pt_solaris_sendfilev_fptr)(int, const struct sendfilevec*, int,
+                                            size_t*) = NULL;
 
 #define SOLARIS_SENDFILEV(a, b, c, d) \
     (*pt_solaris_sendfilev_fptr)((a), (b), (c), (d))
@@ -2484,7 +2482,9 @@ pt_solaris_sendfilev_init_routine(void)
         PR_LOG(_pr_io_lm, PR_LOG_DEBUG, ("dlopen(0) returns %p", handle));
         close_it = PR_TRUE;
     }
-    pt_solaris_sendfilev_fptr = (ssize_t (*)())dlsym(handle, "sendfilev");
+    pt_solaris_sendfilev_fptr =
+        (ssize_t (*)(int, const struct sendfilevec*, int, size_t*))dlsym(
+            handle, "sendfilev");
     PR_LOG(_pr_io_lm, PR_LOG_DEBUG,
            ("dlsym(sendfilev) returns %p", pt_solaris_sendfilev_fptr));
 
