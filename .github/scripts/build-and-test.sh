@@ -3,15 +3,19 @@
 #
 # Extra configure arguments are taken as positional arguments. Callers may set
 # CC, CFLAGS, CXXFLAGS and LDFLAGS, and:
+#   MAKE             GNU make; the BSDs and Solaris ship theirs as gmake
 #   NSPR_COVERAGE    1 to instrument for coverage
 #   NSPR_32BIT       1 to build 32-bit, omitting --enable-64bit
 #   NSPR_SKIP_TESTS  1 to build without building or running the tests
 
 set -e
 
+: "${MAKE:=make}"
+
 if [ -z "${MAKEFLAGS:-}" ]; then
     ncpu=${NUMBER_OF_PROCESSORS:-}
     [ -n "$ncpu" ] || ncpu=$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)
+    [ -n "$ncpu" ] || ncpu=$(sysctl -n hw.ncpu 2>/dev/null || true)
     MAKEFLAGS="-j${ncpu:-1}"
 fi
 export MAKEFLAGS
@@ -37,12 +41,12 @@ srcdir=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 mkdir target
 cd target
 "$srcdir/configure" "$@" --prefix="$PWD/dist"
-make
+"$MAKE"
 
 if [ "${NSPR_SKIP_TESTS:-}" != 1 ]; then
     # Word splitting of $test_make_args is intended.
     # shellcheck disable=SC2086
-    make -C pr/tests ${test_make_args:-}
+    "$MAKE" -C pr/tests ${test_make_args:-}
     cd pr/tests
     "$srcdir/pr/tests/runtests.sh" ../../dist
 fi

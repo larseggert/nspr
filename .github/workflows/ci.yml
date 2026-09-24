@@ -175,6 +175,29 @@ jobs:
           flags: ubuntu-latest-gcc-x86
           token: ${{ secrets.CODECOV_TOKEN }} # zizmor: ignore[secrets-outside-env] A dedicated environment buys nothing for an upload-only token.
 
+  vm:
+    name: ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [freebsd, openbsd, netbsd, solaris]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/check-vm
+        with:
+          platform: ${{ matrix.platform }}
+
+      - if: ${{ !cancelled() }}
+        uses: $/.github/actions/upload-coverage
+        with:
+          plugins: noop # The VM already ran gcov, so noop stops Codecov running the host's.
+          flags: ${{ matrix.platform }}
+          token: ${{ secrets.CODECOV_TOKEN }} # zizmor: ignore[secrets-outside-env] A dedicated environment buys nothing for an upload-only token.
+
   windows:
     name: windows-latest (${{ matrix.arch }})
     runs-on: windows-latest
