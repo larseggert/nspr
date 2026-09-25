@@ -10,6 +10,7 @@
 #ifndef nspr_linux_defs_h___
 #define nspr_linux_defs_h___
 
+#include <features.h> /* for __GLIBC__ */
 #include "prthread.h"
 
 /*
@@ -326,21 +327,24 @@ _MD_ATOMIC_SET(PRInt32* ptr, PRInt32 nv)
 #endif /* __arm__ */
 
 #define USE_SETJMP
-#if (defined(__GLIBC__) && __GLIBC__ >= 2) || defined(ANDROID)
+#if !defined(__GLIBC__) || __GLIBC__ >= 2
 #define _PR_POLL_AVAILABLE
 #endif
 #undef _PR_USE_POLL
 #define _PR_STAT_HAS_ONLY_ST_ATIME
 #if defined(__alpha) || defined(__ia64__)
 #define _PR_HAVE_LARGE_OFF_T
+/* Before !__GLIBC__: 32-bit Android has a 32-bit off_t. */
 #elif (__GLIBC__ > 2) || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 1) || \
     defined(ANDROID)
 #define _PR_HAVE_OFF64_T
+#elif !defined(__GLIBC__)
+#define _PR_HAVE_LARGE_OFF_T /* Non-glibc, e.g. musl: 64-bit off_t. */
 #else
 #define _PR_NO_LARGE_FILES
 #endif
-#if (__GLIBC__ > 2) || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 1) || \
-    defined(ANDROID)
+#if !defined(__GLIBC__) || (__GLIBC__ > 2) || \
+    (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 1)
 #define _PR_INET6
 #define _PR_HAVE_INET_NTOP
 #define _PR_HAVE_GETHOSTBYNAME2
