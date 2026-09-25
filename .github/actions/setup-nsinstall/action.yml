@@ -1,0 +1,41 @@
+name: Set up nsinstall
+description: Install Firefox's nsinstall.py as nsinstall.
+
+outputs:
+  bin:
+    description: Directory of the nsinstall wrapper.
+    value: ${{ steps.setup.outputs.bin }}
+
+runs:
+  using: composite
+  steps:
+    - id: setup
+      shell: bash
+      run: | # zizmor: ignore[github-env] Paths under RUNNER_TEMP only.
+        temp_dir="$(cygpath -u "$RUNNER_TEMP")"
+        nsinstall="$temp_dir/nsinstall.py"
+        url='https://raw.githubusercontent.com/mozilla-firefox/firefox/6d751cf5d0af4b7fcc1b232b6c2ba0551afabe1d/config/nsinstall.py'
+        curl --fail --location --silent --show-error "$url" --output "$nsinstall"
+        expected='f88df5591ee50d6e86625efd6e5f9c7b0dd4cba61e27ab533b1990115e100caf'
+        actual="$(sha256sum "$nsinstall")"
+        actual="${actual%% *}"
+        [[ "$actual" == "$expected" ]] || {
+          printf 'nsinstall.py hash mismatch: expected %s, got %s\n' "$expected" "$actual" >&2
+          exit 1
+        }
+        requirements="$temp_dir/nsinstall-requirements.txt"
+        cat > "$requirements" <<'EOF'
+        mozfile==3.0.0 --hash=sha256:3b0afcda2fa8b802ef657df80a56f21619008f61fcc14b756124028d7b7adf5c
+        six==1.17.0 --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
+        EOF
+        dependencies="$temp_dir/nsinstall-dependencies"
+        python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes --requirement "$requirements" --target "$dependencies"
+        bin_dir="$temp_dir/nsinstall-bin"
+        mkdir "$bin_dir"
+        python="$(command -v python)" # MSYS2 login shells lack it on PATH.
+        printf '#!/bin/sh\nexec "%s" "$NSINSTALL_PY" "$@"\n' "$python" > "$bin_dir/nsinstall"
+        chmod +x "$bin_dir/nsinstall"
+        printf 'NSINSTALL_PY=%s\n' "$(cygpath -m "$nsinstall")" >> "$GITHUB_ENV"
+        printf 'PYTHONPATH=%s\n' "$(cygpath -m "$dependencies")" >> "$GITHUB_ENV"
+        cygpath -m "$bin_dir" >> "$GITHUB_PATH"
+        printf 'bin=%s\n' "$(cygpath -m "$bin_dir")" >> "$GITHUB_OUTPUT"

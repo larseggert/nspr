@@ -226,7 +226,9 @@ jobs:
       - name: Install build tools
         run: |
           pacman -Sy --noconfirm
-          pacman -S --needed --noconfirm make nsinstall
+          pacman -S --needed --noconfirm make
+
+      - uses: $/.github/actions/setup-nsinstall
 
       - name: Configure, build and test
         env:
@@ -257,12 +259,18 @@ jobs:
       - name: Install toolchain
         run: |
           pacman -Sy --noconfirm
-          pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-gcc make nsinstall
+          pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-gcc make
+
+      - id: nsinstall
+        uses: $/.github/actions/setup-nsinstall
 
       - name: Configure, build and test
         env:
           NSPR_COVERAGE: 1
-        run: .github/scripts/build-and-test.sh --enable-win32-target=WIN95
+          NSINSTALL_BIN: ${{ steps.nsinstall.outputs.bin }}
+        run: |
+          export PATH="$(cygpath -u "$NSINSTALL_BIN"):$PATH"
+          .github/scripts/build-and-test.sh --enable-win32-target=WIN95
 
       - name: Put mingw gcov on PATH for Codecov
         if: ${{ !cancelled() }}
