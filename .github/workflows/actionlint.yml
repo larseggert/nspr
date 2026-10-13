@@ -2,7 +2,7 @@ name: Lint GitHub Actions workflows
 
 on:
   push:
-    branches: [main]
+    branches: [main, nspr4]
   pull_request:
   workflow_dispatch:
 

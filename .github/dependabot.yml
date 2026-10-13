@@ -24,3 +24,23 @@ updates:
       # "semver" not supported for github-actions; see https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference#configuration-of-cooldown
       exclude:
         - "mozilla/actions*"
+  # Same as above, for the NSPR 4 maintenance branch.
+  - package-ecosystem: "github-actions"
+    target-branch: "nspr4"
+    directories:
+      - "/.github/actions/*"
+      - "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 99
+    groups:
+      mozilla-actions:
+        patterns:
+          - "mozilla/actions*"
+      actions:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 10
+      exclude:
+        - "mozilla/actions*"
