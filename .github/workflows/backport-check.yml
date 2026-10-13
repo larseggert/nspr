@@ -54,10 +54,14 @@ jobs:
           }
 
           compare_abi() { # <old-abi-dir> <new-abi-dir>
-            local lib rc=0
+            local lib rc=0 def names
+            # Linux exports every global symbol, so only compare those listed in either side's .def files.
+            names=$(for def in pr/src/nspr.def lib/ds/plds.def lib/libc/src/plc.def; do cat "$1/src/$def" "$2/src/$def"; done |
+              sed -nE 's/^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*;.*/\1/p' | sort -u | paste -sd'|' -)
+            printf '[suppress_%s]\nsymbol_name_not_regexp = ^(%s)$\n' function "$names" variable "$names" >"$2/exports.suppr"
             for lib in "$1"/lib/*.so; do
-              abidiff --hd1 "$1/include" --hd2 "$2/include" "$lib" "$2/lib/${lib##*/}" \
-                >"$2/abidiff-${lib##*/}.txt" 2>&1 || rc=$((rc | $?))
+              abidiff --suppressions "$2/exports.suppr" --hd1 "$1/include" --hd2 "$2/include" \
+                "$lib" "$2/lib/${lib##*/}" >"$2/abidiff-${lib##*/}.txt" 2>&1 || rc=$((rc | $?))
             done
             # abidiff exit status bits: 1 error, 4 ABI change, 8 incompatible ABI change.
             if ((rc & 1)); then cat "$2"/abidiff-*.txt >&2; return 1
@@ -119,7 +123,8 @@ jobs:
             done < <(git log --reverse --no-merges --format='%H %h %s' "$1")
             printf '\n_Alone_: cherry-picks onto nspr4 by itself. _In order_: cherry-picks onto nspr4 after the earlier commits, skipping any that conflict.\n'
 
-            if ((incompatible || !applied)); then verdict='not backportable'
+            if ((incompatible)); then verdict='not backportable'
+            elif ((!applied)); then verdict=conflicts
             elif ((skipped || review)); then verdict='needs review'
             else verdict=backportable
             fi
