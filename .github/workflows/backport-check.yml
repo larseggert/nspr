@@ -71,8 +71,9 @@ jobs:
             git merge-tree --write-tree --merge-base="$2^" "$1" "$2"
           }
 
-          check() { # <range> <workdir>
-            local tree=$base prev=$RUNNER_TEMP/abi-base n=0 skipped=0 c short subject alone files seq next abi reports
+          check() { # <range> <workdir> <verdict-file>: print the results table, write the verdict
+            local tree=$base prev=$RUNNER_TEMP/abi-base n=0 skipped=0 applied=0 review=0 incompatible=0
+            local c short subject alone files seq next abi reports verdict
             mkdir -p "$2"
             echo '| Commit | Alone | In order | Files | ABI | Subject |'
             echo '|---|---|---|---|---|---|'
@@ -105,6 +106,12 @@ jobs:
                 fi
                 # abidiff ignores macros and constants, so public header changes always need review.
                 [ "$files" != 'public headers' ] || [ "$abi" != unchanged ] || abi='unchanged, review macros'
+                applied=1
+                case $abi in
+                unchanged) ;;
+                incompatible) incompatible=1 ;;
+                *) review=1 ;;
+                esac
               else
                 skipped=$((skipped + 1))
               fi
@@ -112,18 +119,31 @@ jobs:
             done < <(git log --reverse --no-merges --format='%H %h %s' "$1")
             printf '\n_Alone_: cherry-picks onto nspr4 by itself. _In order_: cherry-picks onto nspr4 after the earlier commits, skipping any that conflict.\n'
 
+            if ((incompatible || !applied)); then verdict='not backportable'
+            elif ((skipped || review)); then verdict='needs review'
+            else verdict=backportable
+            fi
+            echo "$verdict" >"$3"
+            printf '\n**Verdict:** %s\n' "$verdict"
+
             reports=$(cd "$2" && find . -name 'abidiff-*.txt' -size +0 -exec tail -v -n +1 {} +)
             [ -z "$reports" ] || printf '%s\n' '' '<details><summary>abidiff reports</summary>' '' '```' "$reports" '```' '</details>'
           }
 
           build_abi "$base" "$RUNNER_TEMP/abi-base"
 
+          results=$RUNNER_TEMP/results
+          mkdir -p "$results"
           for n in $PRS; do
             case $n in *[!0-9]*) echo "Invalid PR number $n" >&2; exit 1 ;; esac
             git fetch --no-tags origin "+refs/pull/$n/head:refs/remotes/pr/$n"
-            {
-              printf '### #%s\n\n' "$n"
-              check "origin/main..pr/$n" "$RUNNER_TEMP/pr-$n"
-              echo
-            } | tee -a "$GITHUB_STEP_SUMMARY"
+            check "origin/main..pr/$n" "$RUNNER_TEMP/pr-$n" "$results/$n.verdict" >"$results/$n.md"
+            printf '### #%s\n\n' "$n" >>"$GITHUB_STEP_SUMMARY"
+            tee -a "$GITHUB_STEP_SUMMARY" <"$results/$n.md"
           done
+
+      # Read by backport-report.yml, which posts the results to each PR.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nspr4-backport-check
+          path: ${{ runner.temp }}/results/
