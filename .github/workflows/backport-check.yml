@@ -34,6 +34,7 @@ jobs:
       # Cherry-picks each commit of each PR onto nspr4 plus the PR's previous commits,
       # builds with debug info, and compares against the previous step with abidiff.
       - name: Check commits against nspr4
+        shell: bash
         env:
           PRS: ${{ github.event.pull_request.number || inputs.prs }}
         run: |
@@ -59,10 +60,10 @@ jobs:
                 >"$2/abidiff-${lib##*/}.txt" 2>&1 || rc=$((rc | $?))
             done
             # abidiff exit status bits: 1 error, 4 ABI change, 8 incompatible ABI change.
-            if ((rc & 1)); then echo error
+            if ((rc & 1)); then cat "$2"/abidiff-*.txt >&2; return 1
             elif ((rc & 8)); then echo incompatible
-            elif ((rc & 4)); then echo change
-            else echo none
+            elif ((rc & 4)); then echo changed
+            else echo unchanged
             fi
           }
 
@@ -70,14 +71,11 @@ jobs:
             git merge-tree --write-tree --merge-base="$2^" "$1" "$2"
           }
 
-          row() {
-            printf '%-10s %-6s %-8s %-13s %-12s %s\n' "$@"
-          }
-
           check() { # <range> <workdir>
-            local tree=$base prev=$RUNNER_TEMP/abi-base n=0 c short subject alone class stacked next abi
+            local tree=$base prev=$RUNNER_TEMP/abi-base n=0 skipped=0 c short subject alone files seq next abi reports
             mkdir -p "$2"
-            row COMMIT ALONE STACKED FILES ABI SUBJECT
+            echo '| Commit | Alone | In order | Files | ABI | Subject |'
+            echo '|---|---|---|---|---|---|'
             while read -r c short subject; do
               n=$((n + 1))
               alone=no
@@ -86,42 +84,46 @@ jobs:
               # Commits touching only CI, tests and docs cannot change the ABI.
               if git diff --quiet "$c^" "$c" -- ':!.github' ':!pr/tests' ':!lib/tests' \
                 ':!*.md' ':!README*' ':!.git*' ':!.codecov.yml'; then
-                class=no-abi
+                files='CI, tests, docs'
               elif git diff --quiet "$c^" "$c" -- pr/include 'lib/*.h' '*.def'; then
-                class=source
+                files=source
               else
-                class=public-header
+                files='public headers'
               fi
 
-              stacked=conflict abi=-
+              seq=no abi=-
               if next=$(pick "$tree" "$c"); then
-                tree=$next stacked=ok abi=none
-                if [ "$class" != no-abi ]; then
+                tree=$next seq=yes abi=unchanged
+                ((skipped == 0)) || seq="yes ($skipped skipped)"
+                if [ "$files" != 'CI, tests, docs' ]; then
                   if build_abi "$tree" "$2/$n"; then
                     abi=$(compare_abi "$prev" "$2/$n")
                     prev=$2/$n
                   else
-                    abi=build-failed
+                    abi='build failed'
                   fi
                 fi
                 # abidiff ignores macros and constants, so public header changes always need review.
-                [ "$class" != public-header ] || [ "$abi" != none ] || abi=none+review
+                [ "$files" != 'public headers' ] || [ "$abi" != unchanged ] || abi='unchanged, review macros'
+              else
+                skipped=$((skipped + 1))
               fi
-              row "$short" "$alone" "$stacked" "$class" "$abi" "$subject"
+              echo "| $short | $alone | $seq | $files | $abi | ${subject//|/\\|} |"
             done < <(git log --reverse --no-merges --format='%H %h %s' "$1")
+            printf '\n_Alone_: cherry-picks onto nspr4 by itself. _In order_: cherry-picks onto nspr4 after the earlier commits, skipping any that conflict.\n'
 
-            find "$2" -name 'abidiff-*.txt' -size +0 -exec tail -v -n +1 {} +
+            reports=$(cd "$2" && find . -name 'abidiff-*.txt' -size +0 -exec tail -v -n +1 {} +)
+            [ -z "$reports" ] || printf '%s\n' '' '<details><summary>abidiff reports</summary>' '' '```' "$reports" '```' '</details>'
           }
 
           build_abi "$base" "$RUNNER_TEMP/abi-base"
 
           for n in $PRS; do
-            case $n in *[!0-9]*) echo "Skipping invalid PR number $n"; continue ;; esac
+            case $n in *[!0-9]*) echo "Invalid PR number $n" >&2; exit 1 ;; esac
             git fetch --no-tags origin "+refs/pull/$n/head:refs/remotes/pr/$n"
             {
-              echo "### #$n"
-              echo '```'
-              check "origin/main..pr/$n" "$RUNNER_TEMP/pr-$n" || echo "Check failed"
-              echo '```'
+              printf '### #%s\n\n' "$n"
+              check "origin/main..pr/$n" "$RUNNER_TEMP/pr-$n"
+              echo
             } | tee -a "$GITHUB_STEP_SUMMARY"
           done
