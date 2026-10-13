@@ -1,0 +1,149 @@
+name: nspr4 backport check
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      prs:
+        description: Space-separated pull request numbers to check
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  abi:
+    name: Check commits for nspr4 ABI compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install abidiff
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y abigail-tools
+
+      # Cherry-picks each commit of each PR onto nspr4 plus the PR's previous commits,
+      # builds with debug info, and compares against the previous step with abidiff.
+      - name: Check commits against nspr4
+        shell: bash
+        env:
+          PRS: ${{ github.event.pull_request.number || inputs.prs }}
+        run: |
+          base=$(git rev-parse origin/nspr4)
+
+          build_abi() { # <tree-ish> <abi-dir>
+            local src=$2/src
+            mkdir -p "$src" "$2/lib"
+            git archive "$1" | tar -x -C "$src"
+            (cd "$src" && NSPR_SKIP_TESTS=1 .github/scripts/build-and-test.sh \
+              --enable-optimize --enable-debug-symbols >build.log 2>&1) || {
+              tail -20 "$src/build.log" >&2
+              return 1
+            }
+            cp -L "$src"/target/dist/lib/lib*.so "$2/lib/"
+            cp -R "$src/target/dist/include/nspr" "$2/include"
+          }
+
+          compare_abi() { # <old-abi-dir> <new-abi-dir>
+            local lib rc=0
+            for lib in "$1"/lib/*.so; do
+              abidiff --hd1 "$1/include" --hd2 "$2/include" "$lib" "$2/lib/${lib##*/}" \
+                >"$2/abidiff-${lib##*/}.txt" 2>&1 || rc=$((rc | $?))
+            done
+            # abidiff exit status bits: 1 error, 4 ABI change, 8 incompatible ABI change.
+            if ((rc & 1)); then cat "$2"/abidiff-*.txt >&2; return 1
+            elif ((rc & 8)); then echo incompatible
+            elif ((rc & 4)); then echo changed
+            else echo unchanged
+            fi
+          }
+
+          pick() { # <onto> <commit>: print the tree of cherry-picking <commit> onto <onto>
+            git merge-tree --write-tree --merge-base="$2^" "$1" "$2"
+          }
+
+          check() { # <range> <workdir> <verdict-file>: print the results table, write the verdict
+            local tree=$base prev=$RUNNER_TEMP/abi-base n=0 skipped=0 applied=0 review=0 incompatible=0
+            local c short subject alone files seq next abi reports verdict
+            mkdir -p "$2"
+            echo '| Commit | Alone | In order | Files | ABI | Subject |'
+            echo '|---|---|---|---|---|---|'
+            while read -r c short subject; do
+              n=$((n + 1))
+              alone=no
+              pick "$base" "$c" >/dev/null && alone=yes
+
+              # Commits touching only CI, tests and docs cannot change the ABI.
+              if git diff --quiet "$c^" "$c" -- ':!.github' ':!pr/tests' ':!lib/tests' \
+                ':!*.md' ':!README*' ':!.git*' ':!.codecov.yml'; then
+                files='CI, tests, docs'
+              elif git diff --quiet "$c^" "$c" -- pr/include 'lib/*.h' '*.def'; then
+                files=source
+              else
+                files='public headers'
+              fi
+
+              seq=no abi=-
+              if next=$(pick "$tree" "$c"); then
+                tree=$next seq=yes abi=unchanged
+                ((skipped == 0)) || seq="yes ($skipped skipped)"
+                if [ "$files" != 'CI, tests, docs' ]; then
+                  if build_abi "$tree" "$2/$n"; then
+                    abi=$(compare_abi "$prev" "$2/$n")
+                    prev=$2/$n
+                  else
+                    abi='build failed'
+                  fi
+                fi
+                # abidiff ignores macros and constants, so public header changes always need review.
+                [ "$files" != 'public headers' ] || [ "$abi" != unchanged ] || abi='unchanged, review macros'
+                applied=1
+                case $abi in
+                unchanged) ;;
+                incompatible) incompatible=1 ;;
+                *) review=1 ;;
+                esac
+              else
+                skipped=$((skipped + 1))
+              fi
+              echo "| $short | $alone | $seq | $files | $abi | ${subject//|/\\|} |"
+            done < <(git log --reverse --no-merges --format='%H %h %s' "$1")
+            printf '\n_Alone_: cherry-picks onto nspr4 by itself. _In order_: cherry-picks onto nspr4 after the earlier commits, skipping any that conflict.\n'
+
+            if ((incompatible || !applied)); then verdict='not backportable'
+            elif ((skipped || review)); then verdict='needs review'
+            else verdict=backportable
+            fi
+            echo "$verdict" >"$3"
+            printf '\n**Verdict:** %s\n' "$verdict"
+
+            reports=$(cd "$2" && find . -name 'abidiff-*.txt' -size +0 -exec tail -v -n +1 {} +)
+            [ -z "$reports" ] || printf '%s\n' '' '<details><summary>abidiff reports</summary>' '' '```' "$reports" '```' '</details>'
+          }
+
+          build_abi "$base" "$RUNNER_TEMP/abi-base"
+
+          results=$RUNNER_TEMP/results
+          mkdir -p "$results"
+          for n in $PRS; do
+            case $n in *[!0-9]*) echo "Invalid PR number $n" >&2; exit 1 ;; esac
+            git fetch --no-tags origin "+refs/pull/$n/head:refs/remotes/pr/$n"
+            check "origin/main..pr/$n" "$RUNNER_TEMP/pr-$n" "$results/$n.verdict" >"$results/$n.md"
+            printf '### #%s\n\n' "$n" >>"$GITHUB_STEP_SUMMARY"
+            tee -a "$GITHUB_STEP_SUMMARY" <"$results/$n.md"
+          done
+
+      # Read by backport-report.yml, which posts the results to each PR.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nspr4-backport-check
+          path: ${{ runner.temp }}/results/
