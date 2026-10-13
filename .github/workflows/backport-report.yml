@@ -36,7 +36,7 @@ jobs:
           EVENT: ${{ github.event.workflow_run.event }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          declare -A colors=([backportable]=0e8a16 ['needs review']=fbca04 ['not backportable']=b60205)
+          declare -A colors=([backportable]=0e8a16 ['needs review']=fbca04 [conflicts]=d93f0b ['not backportable']=b60205)
           for verdict in "${!colors[@]}"; do
             gh label create "nspr4: $verdict" --color "${colors[$verdict]}" --force
           done
