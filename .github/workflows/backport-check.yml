@@ -77,7 +77,7 @@ jobs:
 
           check() { # <range> <workdir> <verdict-file>: print the results table, write the verdict
             local tree=$base prev=$RUNNER_TEMP/abi-base n=0 skipped=0 applied=0 review=0 incompatible=0
-            local c short subject alone files seq next abi reports verdict
+            local c short subject url alone files seq next abi reports verdict
             mkdir -p "$2"
             echo '| Commit | Alone | In order | Files | ABI | Subject |'
             echo '|---|---|---|---|---|---|'
@@ -119,7 +119,9 @@ jobs:
               else
                 skipped=$((skipped + 1))
               fi
-              echo "| $short | $alone | $seq | $files | $abi | ${subject//|/\\|} |"
+              url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$c
+              subject=${subject//|/\\|} subject=${subject//\[/\\[} subject=${subject//\]/\\]}
+              echo "| [$short]($url) | $alone | $seq | $files | $abi | [$subject]($url) |"
             done < <(git log --reverse --no-merges --format='%H %h %s' "$1")
             printf '\n_Alone_: cherry-picks onto nspr4 by itself. _In order_: cherry-picks onto nspr4 after the earlier commits, skipping any that conflict.\n'
 
