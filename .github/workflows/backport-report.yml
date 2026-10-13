@@ -31,7 +31,6 @@ jobs:
           EVENT: ${{ github.event.workflow_run.event }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          marker='<!-- nspr4-backport-check -->'
           declare -A colors=([backportable]=0e8a16 ['needs review']=fbca04 ['not backportable']=b60205)
           for verdict in "${!colors[@]}"; do
             gh label create "nspr4: $verdict" --color "${colors[$verdict]}" --force
@@ -48,18 +47,9 @@ jobs:
             [ -n "${colors[$verdict]+set}" ] || { echo "Ignoring verdict $verdict for #$n" >&2; continue; }
             [ "$EVENT" != pull_request ] || [ "$n" = "$allowed" ] || { echo "Ignoring #$n" >&2; continue; }
 
-            { printf '%s\n### nspr4 backport check\n\n' "$marker"; cat "results/$n.md"; } >body.md
-            id=$(gh api --paginate "repos/$GH_REPO/issues/$n/comments" \
-              --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
-            if [ -n "$id" ]; then
-              gh api -X PATCH "repos/$GH_REPO/issues/comments/$id" -F body=@body.md >/dev/null
-            else
-              gh api "repos/$GH_REPO/issues/$n/comments" -F body=@body.md >/dev/null
-            fi
+            { printf '### nspr4 backport check\n\n'; cat "results/$n.md"; } |
+              gh pr comment "$n" --edit-last --create-if-none --body-file -
 
-            for other in "${!colors[@]}"; do
-              [ "$other" = "$verdict" ] ||
-                gh api -X DELETE "repos/$GH_REPO/issues/$n/labels/nspr4:%20${other// /%20}" >/dev/null 2>&1 || true
-            done
-            gh api "repos/$GH_REPO/issues/$n/labels" -f "labels[]=nspr4: $verdict" >/dev/null
+            others=$(for v in "${!colors[@]}"; do [ "$v" = "$verdict" ] || printf 'nspr4: %s,' "$v"; done)
+            gh pr edit "$n" --add-label "nspr4: $verdict" --remove-label "${others%,}"
           done
