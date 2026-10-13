@@ -76,6 +76,7 @@ jobs:
 
           check() { # <range> <workdir>
             local tree=$base prev=$RUNNER_TEMP/abi-base n=0 c short subject alone class stacked next abi
+            mkdir -p "$2"
             row COMMIT ALONE STACKED FILES ABI SUBJECT
             while read -r c short subject; do
               n=$((n + 1))
